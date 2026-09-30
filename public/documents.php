@@ -28,7 +28,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $categoryRow = $check->fetch();
             if (!$categoryRow) throw new RuntimeException('Kategori tidak valid.');
             
-            // LOGIKA DEVOPS V2: Pemisahan jalur folder berdasarkan nama kategori secara dinamis
             $categoryFolder = 'umum';
             if ($categoryRow) {
                 $categoryFolder = strtolower(preg_replace('/[^a-zA-Z0-9]/', '_', $categoryRow['name']));
@@ -36,7 +35,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             $targetDir = BASE_PATH . '/storage/encrypted/' . $categoryFolder;
             
-            // Buat sub-folder secara otomatis jika belum wujud di dalam harddisk
             if (!file_exists($targetDir)) {
                 mkdir($targetDir, 0777, true);
             }
@@ -44,12 +42,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stored = bin2hex(random_bytes(20)) . '.vault';
             $path = $targetDir . '/' . $stored;
             
-            // Eksekusi enkripsi biner aman
             encrypt_file($f['tmp_name'], $path);
             
-            // Simpan format jalur relatif (folder/nama_file) ke database
             $storedNameDb = $categoryFolder . '/' . $stored;
-            
             $finalTitle = ($customName !== '') ? $customName . '.' . $ext : $f['name'];
             
             $stmt = db()->prepare('INSERT INTO documents (category_id, original_name, title, stored_name, mime_type, size_bytes, uploaded_by, is_deleted, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime("now"))');
@@ -77,16 +72,13 @@ if ($q !== '') {
 page_header('Brankas Dokumen');
 ?>
 
-<!-- Tombol Akses Keranjang Sampah V2 -->
 <div class="d-flex justify-content-end mb-3">
     <a href="recycle_bin.php" class="btn btn-outline-danger btn-sm">🗑️ Buka Recycle Bin</a>
 </div>
 
-<!-- Alert Notification -->
 <?php if ($msg): ?><div class="alert alert-success alert-dismissible fade show" role="alert"><?= h($msg) ?><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div><?php endif; ?>
 <?php if ($err): ?><div class="alert alert-danger alert-dismissible fade show" role="alert"><?= h($err) ?><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div><?php endif; ?>
 
-<!-- Pencarian dan Filter -->
 <div class="card p-3 mb-4 shadow-sm">
     <form method="get" class="row g-2">
         <div class="col-md-10">
@@ -98,14 +90,13 @@ page_header('Brankas Dokumen');
     </form>
 </div>
 
-<!-- Form Upload Drag & Drop Modern -->
 <?php if (in_array(user()['role'], ['admin', 'operator'], true)): ?>
 <div class="card p-4 mb-4 shadow-sm">
-    <h5 class="mb-3 font-bold text-secondary">Upload Dokumen Baru (DMS KPU Tolikara V2)</h5>
+    <h5 class="mb-3 font-bold text-secondary">Upload Dokumen Baru (DMS ENDI V2)</h5>
     <form method="post" enctype="multipart/form-data" class="space-y-3">
         
-        <!-- Area Drop Zone -->
-        <div class="border-2 border-dashed border-primary rounded-3 p-4 text-center cursor-pointer bg-light hover:bg-white transition mb-3" id="drop-zone" style="cursor: pointer;">
+        <!-- FIX STRUKTUR INDUK: Memastikan input dilekatkan tepat di baris teratas drop-zone -->
+        <div class="border-2 border-dashed border-primary rounded-3 p-4 text-center bg-light hover:bg-white transition mb-3" id="drop-zone" style="cursor: pointer;">
             <input type="file" name="document" id="file-input" class="d-none" required />
             <div class="py-2">
                 <svg xmlns="http://w3.org" width="40" height="40" fill="currentColor" class="bi bi-cloud-arrow-up text-primary mb-2" viewBox="0 0 16 16">
@@ -113,18 +104,16 @@ page_header('Brankas Dokumen');
                     <path d="M4.406 3.342A5.53 5.53 0 0 1 8 2c2.69 0 4.923 2 5.166 4.579C14.758 6.804 16 8.137 16 9.773 16 11.569 14.502 13 12.687 13H3.781C1.708 13 0 11.366 0 9.318c0-1.763 1.266-3.223 2.942-3.593.143-.863.698-1.723 1.464-2.383zm.653.757c-.757.653-1.153 1.44-1.153 2.056v.517l-.518.003C2.067 6.68 1 7.74 1 9.318 1 10.759 2.165 12 3.781 12h8.906C13.98 12 15 11.02 15 9.773c0-1.216-1.02-2.228-2.313-2.228h-.5v-.5C12.188 4.725 10.334 3 8 3a4.48 4.48 0 0 0-2.941 1.1z"/>
                 </svg>
                 <p class="mb-1 text-dark fw-bold">Tarik & Lepaskan berkas di sini</p>
-                <p class="text-muted small">atau <span class="text-primary text-decoration-underline">pilih berkas dari komputer</span></p>
+                <p class="text-muted small">atau <span class="text-primary text-decoration-underline" style="pointer-events: none;">pilih berkas dari komputer</span></p>
                 <div id="file-name-preview" class="mt-2 badge bg-primary text-wrap p-2 d-none"></div>
             </div>
         </div>
 
-        <!-- Input Nama File Kustom -->
         <div class="mb-3">
             <label class="form-label fw-bold text-secondary">Nama Dokumen Kustom (Opsional)</label>
             <input type="text" name="custom_name" class="form-control" placeholder="Kosongkan jika ingin nama asli berkas">
         </div>
 
-        <!-- Pilihan Kategori dan Tombol -->
         <div class="row g-2">
             <div class="col-md-9">
                 <select class="form-select" name="category_id" required>
@@ -142,7 +131,6 @@ page_header('Brankas Dokumen');
 </div>
 <?php endif; ?>
 
-<!-- Tabel Daftar Dokumen -->
 <div class="card p-3 shadow-sm">
     <div class="table-responsive">
         <table class="table table-striped align-middle">
@@ -182,12 +170,26 @@ page_header('Brankas Dokumen');
                         </div>
                     </td>
                 </tr>
-Belum ada dokumen yang tersimpan di brankas.
+                <?php endforeach; ?>
+                <?php if (empty($docs)): ?>
+                <tr>
+                    <td colspan="5" class="text-center text-muted py-4">Belum ada dokumen yang tersimpan di brankas.</td>
+                </tr>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 const filePreview = document.getElementById('file-name-preview');
-if(dropZone) {
-dropZone.addEventListener('click', () => fileInput.click());
+if (dropZone) {
+// Aksi Klik Murni Universal
+dropZone.addEventListener('click', (e) => {
+fileInput.click();
+});
 dropZone.addEventListener('dragover', (e) => {
 e.preventDefault();
 dropZone.classList.replace('bg-light', 'bg-white');
@@ -207,7 +209,9 @@ showFileName(e.dataTransfer.files[0].name);
 }
 });
 fileInput.addEventListener('change', () => {
-if (fileInput.files.length) showFileName(fileInput.files[0].name);
+if (fileInput.files.length) {
+showFileName(fileInput.files[0].name);
+}
 });
 }
 function showFileName(name) {
