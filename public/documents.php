@@ -31,13 +31,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $path = BASE_PATH . '/storage/encrypted/' . $stored;
             
             encrypt_file($f['tmp_name'], $path);
+            // 1. Cari nama kategori berdasarkan category_id yang dipilih user
+            $catStmt = db()->prepare('SELECT name FROM categories WHERE id = ?');
+            $catStmt->execute([$cat]);
+            $categoryRow = $catStmt->fetch();
             
-            // Logika Nama Kustom: Jika diisi, tambahkan ekstensi file aslinya
+            // Bersihkan nama folder (contoh: "Surat Keputusan" -> "surat_keputusan")
+            $categoryFolder = 'umum';
+            if ($categoryRow) {
+                $categoryFolder = strtolower(preg_replace('/[^a-zA-Z0-9]/', '_', $categoryRow['name']));
+            }
+            
+            // 2. Definisikan jalur folder target baru sesuai kategori di dalam kontainer Docker
+            $targetDir = BASE_PATH . '/storage/encrypted/' . $categoryFolder;
+            
+            // 3. Buat folder fisik otomatis di harddisk jika foldernya belum ada
+            if (!file_exists($targetDir)) {
+                mkdir($targetDir, 0777, true);
+            }
+            
+            // 4. Tentukan jalur simpan akhir file terenkripsi di dalam sub-folder kategori
+            $stored = bin2hex(random_bytes(20)) . '.vault';
+            $path = $targetDir . '/' . $stored;
+            
+            // Jalankan enkripsi file ke folder tujuan yang baru
+            encrypt_file($f['tmp_name'], $path);
+            
+            // Amankan nama folder relatifnya ke database agar fungsi unduh/preview tidak bingung
+            $storedNameDb = $categoryFolder . '/' . $stored;
+            
             $finalTitle = ($customName !== '') ? $customName . '.' . $ext : $f['name'];
             
             $stmt = db()->prepare('INSERT INTO documents (category_id, original_name, title, stored_name, mime_type, size_bytes, uploaded_by, is_deleted, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime("now"))');
-            $stmt->execute([$cat, $f['name'], $finalTitle, $stored, $f['type'] ?: 'application/octet-stream', $f['size'], user()['id']]);
-            
+            $stmt->execute([$cat, $f['name'], $finalTitle, $storedNameDb, $f['type'] ?: 'application/octet-stream', $f['size'], user()['id']]);
+
             audit('upload');
             $msg = 'Dokumen berhasil disimpan dengan nama kustom secara terenkripsi.';
         } catch (Throwable $e) { 
