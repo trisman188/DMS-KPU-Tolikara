@@ -1,0 +1,38 @@
+name: DMS ENDI CI/CD Pipeline
+
+# 1. Trigger: Jalankan robot otomatis ini setiap kali ada aktivitas 'push' ke branch 'main'
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    # Langkah A: Ambil kode terbaru dari repository GitHub
+    - name: Checkout Source Code
+      uses: actions/checkout@v4
+
+    # Langkah B: Periksa keamanan dan sintaksis kode PHP (Continuous Integration)
+    - name: Validate PHP Syntax
+      run: |
+        echo "Memulai pengecekan sintaksis file PHP..."
+        find . -name "*.php" -exec php -l {} \;
+
+    # Langkah C: Simulasi pembangunan Container Docker (Docker Build Test)
+    - name: Test Docker Build
+      run: |
+        echo "Menguji build Dockerfile..."
+        docker build -t dms-endi-app:test .
+
+  deploy-to-server:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    # Langkah D: Continuous Deployment (Hanya berjalan jika tahap tes di atas lolos 100%)
+    steps:
+    - name: Deploy Announcement
+      run: |
+        echo "🚀 Pipeline lolos uji kelayakan!"
+        echo "Mengalirkan pembaruan sistem ke container produksi..."
+        # Di tahap server asli, bagian ini akan diisi perintah SSH otomatis untuk 'docker compose pull && docker compose up -d'

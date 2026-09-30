@@ -1,0 +1,11 @@
+<?php
+require_once __DIR__.'/../app/auth.php'; require_role(['admin']); require_once __DIR__.'/../app/layout.php';
+$msg='';$err='';
+if($_SERVER['REQUEST_METHOD']==='POST'){verify_csrf();try{$username=trim($_POST['username']);$name=trim($_POST['name']);$role=$_POST['role'];$pass=$_POST['password'];if(!preg_match('/^[A-Za-z0-9._-]{3,50}$/',$username))throw new RuntimeException('Username tidak valid.');if(strlen($pass)<10)throw new RuntimeException('Password minimal 10 karakter.');if(!in_array($role,['admin','operator','viewer'],true))throw new RuntimeException('Role tidak valid.');$s=db()->prepare('INSERT INTO users(username,password_hash,name,role,created_at) VALUES(?,?,?,?,datetime("now"))');$s->execute([$username,password_hash($pass,PASSWORD_DEFAULT),$name,$role]);audit('create_user',null,'Membuat user '.$username);$msg='Pengguna berhasil dibuat.';}catch(Throwable $e){$err=$e->getMessage();}}
+$users=db()->query('SELECT id,username,name,role,created_at FROM users ORDER BY id')->fetchAll();page_header('Manajemen Pengguna');
+?>
+<?php if($msg): ?><div class="alert alert-success"><?=h($msg)?></div><?php endif; ?><?php if($err): ?><div class="alert alert-danger"><?=h($err)?></div><?php endif; ?>
+<div class="card p-4 mb-4"><h5>Tambah Pengguna</h5><form method="post" class="row g-3"><input type="hidden" name="_csrf" value="<?=h(csrf_token())?>">
+<div class="col-md-3"><input class="form-control" name="username" placeholder="Username" required></div><div class="col-md-3"><input class="form-control" name="name" placeholder="Nama lengkap" required></div><div class="col-md-2"><select class="form-select" name="role"><option>viewer</option><option>operator</option><option>admin</option></select></div><div class="col-md-2"><input class="form-control" type="password" name="password" placeholder="Password" required></div><div class="col-md-2"><button class="btn btn-dark w-100">Tambah</button></div></form></div>
+<div class="card p-4"><table class="table"><thead><tr><th>Username</th><th>Nama</th><th>Role</th><th>Dibuat</th></tr></thead><tbody><?php foreach($users as $u): ?><tr><td><?=h($u['username'])?></td><td><?=h($u['name'])?></td><td><?=h($u['role'])?></td><td><?=h($u['created_at'])?></td></tr><?php endforeach; ?></tbody></table></div>
+<?php page_footer(); ?>
