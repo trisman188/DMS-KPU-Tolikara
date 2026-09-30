@@ -23,50 +23,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
             if (!in_array($ext, $allowed, true)) throw new RuntimeException('Ekstensi file tidak diizinkan.');
             
-            $check = db()->prepare('SELECT id FROM categories WHERE id = ?');
+            $check = db()->prepare('SELECT id, name FROM categories WHERE id = ?');
             $check->execute([$cat]);
-            if (!$check->fetch()) throw new RuntimeException('Kategori tidak valid.');
+            $categoryRow = $check->fetch();
+            if (!$categoryRow) throw new RuntimeException('Kategori tidak valid.');
             
-            $stored = bin2hex(random_bytes(20)) . '.vault';
-            $path = BASE_PATH . '/storage/encrypted/' . $stored;
-            
-            encrypt_file($f['tmp_name'], $path);
-            // 1. Cari nama kategori berdasarkan category_id yang dipilih user
-            $catStmt = db()->prepare('SELECT name FROM categories WHERE id = ?');
-            $catStmt->execute([$cat]);
-            $categoryRow = $catStmt->fetch();
-            
-            // Bersihkan nama folder (contoh: "Surat Keputusan" -> "surat_keputusan")
+            // LOGIKA DEVOPS V2: Pemisahan jalur folder berdasarkan nama kategori secara dinamis
             $categoryFolder = 'umum';
             if ($categoryRow) {
                 $categoryFolder = strtolower(preg_replace('/[^a-zA-Z0-9]/', '_', $categoryRow['name']));
             }
             
-            // 2. Definisikan jalur folder target baru sesuai kategori di dalam kontainer Docker
             $targetDir = BASE_PATH . '/storage/encrypted/' . $categoryFolder;
             
-            // 3. Buat folder fisik otomatis di harddisk jika foldernya belum ada
+            // Buat sub-folder secara otomatis jika belum wujud di dalam harddisk
             if (!file_exists($targetDir)) {
                 mkdir($targetDir, 0777, true);
             }
             
-            // 4. Tentukan jalur simpan akhir file terenkripsi di dalam sub-folder kategori
             $stored = bin2hex(random_bytes(20)) . '.vault';
             $path = $targetDir . '/' . $stored;
             
-            // Jalankan enkripsi file ke folder tujuan yang baru
+            // Eksekusi enkripsi biner aman
             encrypt_file($f['tmp_name'], $path);
             
-            // Amankan nama folder relatifnya ke database agar fungsi unduh/preview tidak bingung
+            // Simpan format jalur relatif (folder/nama_file) ke database
             $storedNameDb = $categoryFolder . '/' . $stored;
             
             $finalTitle = ($customName !== '') ? $customName . '.' . $ext : $f['name'];
             
             $stmt = db()->prepare('INSERT INTO documents (category_id, original_name, title, stored_name, mime_type, size_bytes, uploaded_by, is_deleted, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime("now"))');
             $stmt->execute([$cat, $f['name'], $finalTitle, $storedNameDb, $f['type'] ?: 'application/octet-stream', $f['size'], user()['id']]);
-
+            
             audit('upload');
-            $msg = 'Dokumen berhasil disimpan dengan nama kustom secara terenkripsi.';
+            $msg = 'Dokumen berhasil disimpan secara terpisah sesuai kategori.';
         } catch (Throwable $e) { 
             $err = $e->getMessage(); 
         }
@@ -84,7 +74,7 @@ if ($q !== '') {
     $docs = db()->query('SELECT d.*, c.name as category, u.name as uploader FROM documents d JOIN categories c ON c.id = d.category_id JOIN users u ON u.id = d.uploaded_by WHERE d.is_deleted = 0 ORDER BY d.id DESC')->fetchAll();
 }
 
-page_header('DMS KPU Tolikara - Brankas Dokumen');
+page_header('Brankas Dokumen');
 ?>
 
 <!-- Tombol Akses Keranjang Sampah V2 -->
@@ -108,7 +98,7 @@ page_header('DMS KPU Tolikara - Brankas Dokumen');
     </form>
 </div>
 
-<!-- Form Upload Drag & Drop Modern dengan Input Nama Kustom -->
+<!-- Form Upload Drag & Drop Modern -->
 <?php if (in_array(user()['role'], ['admin', 'operator'], true)): ?>
 <div class="card p-4 mb-4 shadow-sm">
     <h5 class="mb-3 font-bold text-secondary">Upload Dokumen Baru (DMS KPU Tolikara V2)</h5>
@@ -131,7 +121,7 @@ page_header('DMS KPU Tolikara - Brankas Dokumen');
         <!-- Input Nama File Kustom -->
         <div class="mb-3">
             <label class="form-label fw-bold text-secondary">Nama Dokumen Kustom (Opsional)</label>
-            <input type="text" name="custom_name" class="form-control" placeholder="Contoh: Surat Perjanjian Kontrak Kerja (Kosongkan jika ingin nama asli berkas)">
+            <input type="text" name="custom_name" class="form-control" placeholder="Kosongkan jika ingin nama asli berkas">
         </div>
 
         <!-- Pilihan Kategori dan Tombol -->
@@ -192,66 +182,35 @@ page_header('DMS KPU Tolikara - Brankas Dokumen');
                         </div>
                     </td>
                 </tr>
-                <?php endforeach; ?>
-                <?php if (empty($docs)): ?>
-                <tr>
-                    <td colspan="5" class="text-center text-muted py-4">Belum ada dokumen yang tersimpan di brankas.</td>
-                </tr>
-                <?php endif; ?>
-            </tbody>
-        </table>
-    </div>
-</div>
-
-<script>
-// 1. Definisikan semua variabel di bagian paling atas (Wajib)
+Belum ada dokumen yang tersimpan di brankas.
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 const filePreview = document.getElementById('file-name-preview');
-
-// 2. Bungkus semua logika di dalam satu kondisi if (dropZone) saja
-if (dropZone) {
-    // Memastikan klik di area mana pun di dalam drop-zone membuka file picker
-    dropZone.addEventListener('click', (e) => {
-        fileInput.click();
-    });
-    
-    // Logika visual saat file ditarik di atas kotak (Drag Over)
-    dropZone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        dropZone.classList.replace('bg-light', 'bg-white');
-        dropZone.style.borderColor = '#0d6efd';
-    });
-    
-    // Logika visual saat file batal ditarik atau dilepaskan (Drag Leave & Drop)
-    ['dragleave', 'drop'].forEach(event => {
-        dropZone.addEventListener(event, () => {
-            dropZone.classList.replace('bg-white', 'bg-light');
-            dropZone.style.borderColor = '#0d6efd';
-        });
-    });
-    
-    // Menangkap file yang dijatuhkan (Dropped)
-    dropZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        if (e.dataTransfer.files.length) {
-            fileInput.files = e.dataTransfer.files;
-            showFileName(e.dataTransfer.files[0].name);
-        }
-    });
-    
-    // Menangkap file yang dipilih via klik biasa (Changed)
-    fileInput.addEventListener('change', () => {
-        if (fileInput.files.length) {
-            showFileName(fileInput.files[0].name);
-        }
-    });
+if(dropZone) {
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', (e) => {
+e.preventDefault();
+dropZone.classList.replace('bg-light', 'bg-white');
+dropZone.style.borderColor = '#0d6efd';
+});
+['dragleave', 'drop'].forEach(event => {
+dropZone.addEventListener(event, () => {
+dropZone.classList.replace('bg-white', 'bg-light');
+dropZone.style.borderColor = '#0d6efd';
+});
+});
+dropZone.addEventListener('drop', (e) => {
+e.preventDefault();
+if (e.dataTransfer.files.length) {
+fileInput.files = e.dataTransfer.files;
+showFileName(e.dataTransfer.files[0].name);
 }
-
-// 3. Fungsi pembantu untuk memunculkan nama berkas di layar browser
+});
+fileInput.addEventListener('change', () => {
+if (fileInput.files.length) showFileName(fileInput.files[0].name);
+});
+}
 function showFileName(name) {
-    filePreview.textContent = "📎 Berkas Terpilih: " + name;
-    filePreview.classList.remove('d-none');
+filePreview.textContent = "📎 Berkas Terpilih: " + name;
+filePreview.classList.remove('d-none');
 }
-</script>
-
